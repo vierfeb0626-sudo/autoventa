@@ -1,213 +1,108 @@
-import json
-import os
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "TU_TOKEN_AQUI"
+# VARIABLES
+BOT_TOKEN = "AQUI_TU_TOKEN"
+ADMIN_ID = 123456789  # tu ID
 
-STOCK_FILE = "stock.json"
-USERS_FILE = "users.json"
-PRICES_FILE = "prices.json"
+# STOCK (ejemplo)
+stock = {
+    "NETFLIX_PERFIL": [],
+    "DISNEY": [],
+    "COMBO_MEXICO": []
+}
 
-# ---------- UTIL ----------
+# START
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        ["🛒 Comprar"],
+        ["📦 Ver servicios"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def load(file):
-if not os.path.exists(file):
-return {}
-with open(file) as f:
-return json.load(f)
+    await update.message.reply_text("Bienvenido 👋\nSelecciona una opción:", reply_markup=reply_markup)
 
-def save(file, data):
-with open(file, "w") as f:
-json.dump(data, f, indent=4)
+# MENSAJES
+async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
 
-def now():
-return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    if text == "🛒 Comprar":
+        keyboard = [
+            ["Netflix Perfil"],
+            ["Disney"],
+            ["Combo México"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# ---------- STOCK ----------
+        await update.message.reply_text("Selecciona servicio:", reply_markup=reply_markup)
 
-def add_stock(service, tipo, acc):
-data = load(STOCK_FILE)
-data.setdefault(service, {}).setdefault(tipo, []).append(acc)
-save(STOCK_FILE, data)
+    elif text == "Netflix Perfil":
+        await entregar(update, "NETFLIX_PERFIL")
 
-def get_stock(service, tipo):
-data = load(STOCK_FILE)
-try:
-acc = data[service][tipo].pop(0)
-save(STOCK_FILE, data)
-return acc
-except:
-return None
+    elif text == "Disney":
+        await entregar(update, "DISNEY")
 
-def count_stock():
-data = load(STOCK_FILE)
-msg = "📦 STOCK DISPONIBLE:\n\n"
-for s in data:
-for t in data[s]:
-msg += f"{s} {t}: {len(data[s][t])}\n"
-return msg
+    elif text == "Combo México":
+        await entregar(update, "COMBO_MEXICO")
 
-# ---------- USUARIOS ----------
+# ENTREGA AUTOMÁTICA
+async def entregar(update, servicio):
+    if len(stock[servicio]) == 0:
+        await update.message.reply_text("❌ Sin stock disponible")
+        return
 
-def get_saldo(user):
-data = load(USERS_FILE)
-return data.get(str(user), 0)
+    cuenta = stock[servicio].pop(0)
 
-def add_saldo(user, monto):
-data = load(USERS_FILE)
-data[str(user)] = data.get(str(user), 0) + monto
-save(USERS_FILE, data)
+    entrega = f"""
+📦 FICHA DE ENTREGA
 
-def restar_saldo(user, monto):
-data = load(USERS_FILE)
-data[str(user)] -= monto
-save(USERS_FILE, data)
+Servicio: {servicio}
 
-# ---------- PRECIOS ----------
+🔐 Datos:
+{cuenta}
 
-def set_price(service, tipo, price):
-data = load(PRICES_FILE)
-data.setdefault(service, {})[tipo] = price
-save(PRICES_FILE, data)
+⚠️ Reglas:
+- No modificar
+- Usar perfil asignado
+- No compras dentro de la app
 
-def get_price(service, tipo):
-data = load(PRICES_FILE)
-return data.get(service, {}).get(tipo, 0)
-
-# ---------- PARSE ----------
-
-def parse(acc):
-p = acc.split("_")
-return p[0], p[1], p[2] if len(p) > 2 else "N/A"
-
-# ---------- ENTREGA ----------
-
-def entrega(service, email, password, perfil):
-return f"""
-━━━━━━━━━━━━━━━
-🎬 VELTRIX
-━━━━━━━━━━━━━━━
-
-📱 APP: {service}
-📧 {email}
-🔑 {password}
-👤 {perfil}
-
-📜 REGLAS
-❌ No modificar
-👤 Usar perfil asignado
-⚠️ No comprar dentro de la app
-
-⏰ {now()}
-━━━━━━━━━━━━━━━
+🕒 Entregado automáticamente
 """
 
-# ---------- MENU ----------
+    await update.message.reply_text(entrega)
 
-SERVICES = ["NETFLIX", "DISNEY", "SPOTIFY", "HBO"]
-
-async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-kb = []
-for s in SERVICES:
-kb.append([InlineKeyboardButton(s, callback_data=f"buy_{s}_perfil")])
-
-```
-await update.message.reply_text(
-    "🛒 Selecciona servicio:",
-    reply_markup=InlineKeyboardMarkup(kb)
-)
-```
-
-# ---------- CALLBACK ----------
-
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-q = update.callback_query
-await q.answer()
-
-```
-data = q.data
-
-if data.startswith("buy_"):
-    _, service, tipo = data.split("_")
-
-    price = get_price(service, tipo)
-    saldo = get_saldo(q.from_user.id)
-
-    if saldo < price:
-        await q.edit_message_text(f"❌ Saldo insuficiente\n💰 Tienes: {saldo}")
-        return
-
-    acc = get_stock(service, tipo)
-    if not acc:
-        await q.edit_message_text("❌ Sin stock")
-        return
-
-    email, password, perfil = parse(acc)
-
-    restar_saldo(q.from_user.id, price)
-
-    await q.edit_message_text(
-        entrega(service, email, password, perfil) +
-        f"\n💰 Saldo restante: {get_saldo(q.from_user.id)}"
-    )
-```
-
-# ---------- ADMIN ----------
-
+# ADMIN - SETSTOCK
 async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-s = context.args[0].upper()
-t = context.args[1].lower()
-acc = context.args[2]
+    if update.effective_user.id != ADMIN_ID:
+        return
 
-```
-    add_stock(s, t, acc)
-    await update.message.reply_text("✅ Stock agregado")
-except:
-    await update.message.reply_text("Uso: /setstock NETFLIX perfil correo_pass_perfil")
-```
+    try:
+        servicio = context.args[0]
+        datos = " ".join(context.args[1:])
 
+        stock[servicio].append(datos)
+
+        await update.message.reply_text(f"✅ Cuenta agregada a {servicio}")
+    except:
+        await update.message.reply_text("Uso:\n/setstock SERVICIO correo_contraseña_perfil")
+
+# VER STOCK
 async def verstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-await update.message.reply_text(count_stock())
+    if update.effective_user.id != ADMIN_ID:
+        return
 
-async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-user = context.args[0]
-monto = int(context.args[1])
+    texto = "📦 STOCK:\n"
+    for s in stock:
+        texto += f"{s}: {len(stock[s])}\n"
 
-```
-    add_saldo(user, monto)
-    await update.message.reply_text("💰 Saldo agregado")
-except:
-    await update.message.reply_text("Uso: /addsaldo ID MONTO")
-```
+    await update.message.reply_text(texto)
 
-async def setsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-s = context.args[0].upper()
-t = context.args[1].lower()
-p = int(context.args[2])
+# MAIN
+app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-```
-    set_price(s, t, p)
-    await update.message.reply_text("💲 Precio actualizado")
-except:
-    await update.message.reply_text("Uso: /setsaldo NETFLIX perfil 50")
-```
-
-# ---------- MAIN ----------
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("comprar", comprar))
+app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("setstock", setstock))
 app.add_handler(CommandHandler("verstock", verstock))
-app.add_handler(CommandHandler("addsaldo", addsaldo))
-app.add_handler(CommandHandler("setsaldo", setsaldo))
+app.add_handler(MessageHandler(filters.TEXT, mensajes))
 
-app.add_handler(CallbackQueryHandler(buttons))
-
-print("🔥 BOT TIENDA ACTIVO")
 app.run_polling()
