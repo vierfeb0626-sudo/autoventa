@@ -16,20 +16,13 @@ import os
 # =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 6957858602
-
-if not TOKEN:
-    raise ValueError("No hay BOT_TOKEN en variables de entorno")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 # =========================
 # STOCK
 # =========================
 
-stock = {
-    "NETFLIX": [],
-    "DISNEY": [],
-    "SPOTIFY": []
-}
+stock = {}
 
 combos = {
     "COMBO_MEXICO": [
@@ -59,13 +52,25 @@ def guardar_stock():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    user_id = update.effective_user.id
+
     keyboard = [
         ["🛒 Comprar"],
         ["📦 Servicios"]
     ]
 
+    mensaje = f"""
+👋 Bienvenido a VELTRIX
+
+🆔 Tu ID: {user_id}
+
+💰 Usa este ID para recargar saldo
+
+Selecciona una opción:
+"""
+
     await update.message.reply_text(
-        "👋 Bienvenido a VELTRIX\n\nSelecciona una opción:",
+        mensaje,
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True
@@ -99,28 +104,23 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "📦 Servicios":
 
-        mensaje = """
-📦 SERVICIOS DISPONIBLES
+        if not stock:
+            await update.message.reply_text("❌ No hay servicios aún")
+            return
 
-• Netflix
-• Disney
-• Spotify
-• Combo México
-"""
+        lista = "\n".join([f"• {s}" for s in stock.keys()])
 
-        await update.message.reply_text(mensaje)
+        await update.message.reply_text(
+            f"📦 SERVICIOS DISPONIBLES\n\n{lista}"
+        )
 
-    elif text == "Netflix":
-        await entregar(update, ["NETFLIX"], "Netflix")
+    else:
+        servicio = text.upper()
 
-    elif text == "Disney":
-        await entregar(update, ["DISNEY"], "Disney")
-
-    elif text == "Spotify":
-        await entregar(update, ["SPOTIFY"], "Spotify")
-
-    elif text == "Combo México":
-        await entregar(update, combos["COMBO_MEXICO"], "Combo México")
+        if servicio == "COMBO MÉXICO":
+            await entregar(update, combos["COMBO_MEXICO"], "Combo México")
+        else:
+            await entregar(update, [servicio], servicio)
 
 # =========================
 # ENTREGAR
@@ -131,8 +131,11 @@ async def entregar(update, servicios, nombre):
     cuentas = []
 
     for servicio in servicios:
-        if len(stock[servicio]) == 0:
-            await update.message.reply_text(f"❌ Sin stock en {servicio}")
+
+        if servicio not in stock or len(stock[servicio]) == 0:
+            await update.message.reply_text(
+                f"❌ Sin stock en {servicio}"
+            )
             return
 
     for servicio in servicios:
@@ -154,18 +157,18 @@ async def entregar(update, servicios, nombre):
 {datos}
 
 ⚠️ REGLAS
-
 • No modificar datos
 • No cambiar contraseña
 • No realizar compras
-• Usar solo perfil asignado
 
 🕒 Fecha:
 {fecha}
 """
 
     with open("ventas.txt", "a", encoding="utf-8") as f:
-        f.write(f"{update.effective_user.id} | {nombre} | {fecha}\n")
+        f.write(
+            f"{update.effective_user.id} | {nombre} | {fecha}\n"
+        )
 
     await update.message.reply_text(
         mensaje,
@@ -186,17 +189,18 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         servicio = context.args[0].upper()
         datos = " ".join(context.args[1:])
 
+        # 🔥 CREA SERVICIO AUTOMÁTICO
         if servicio not in stock:
-            await update.message.reply_text("❌ Servicio inválido")
-            return
+            stock[servicio] = []
 
         stock[servicio].append(datos)
         guardar_stock()
 
-        await update.message.reply_text(f"✅ Cuenta agregada a {servicio}")
+        await update.message.reply_text(
+            f"✅ Cuenta agregada a {servicio}"
+        )
 
-    except Exception as e:
-        print(e)
+    except:
         await update.message.reply_text(
             "Uso:\n/setstock NETFLIX correo:contra:perfil"
         )
@@ -215,16 +219,10 @@ async def verstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for servicio in stock:
         cantidad = len(stock[servicio])
         estado = "🟢" if cantidad > 0 else "🔴"
+
         texto += f"{estado} {servicio}: {cantidad}\n"
 
     await update.message.reply_text(texto)
-
-# =========================
-# ERROR
-# =========================
-
-async def error_handler(update, context):
-    print(f"ERROR: {context.error}")
 
 # =========================
 # MAIN
@@ -241,20 +239,12 @@ def main():
     app.add_handler(CommandHandler("verstock", verstock))
 
     app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            mensajes
-        )
+        MessageHandler(filters.TEXT & ~filters.COMMAND, mensajes)
     )
 
-    app.add_error_handler(error_handler)
-
     print("🤖 BOT VELTRIX ONLINE")
-
     app.run_polling()
 
-# =========================
-# START
 # =========================
 
 if __name__ == "__main__":
