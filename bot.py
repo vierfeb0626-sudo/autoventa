@@ -1,92 +1,120 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from datetime import datetime
 
 # VARIABLES
 BOT_TOKEN = "AQUI_TU_TOKEN"
-ADMIN_ID = 123456789  # tu ID
+ADMIN_ID = 123456789
 
-# STOCK (ejemplo)
+# STOCK
 stock = {
-    "NETFLIX_PERFIL": [],
+    "NETFLIX": [],
     "DISNEY": [],
-    "COMBO_MEXICO": []
+    "SPOTIFY": [],
+}
+
+# COMBOS (usa servicios existentes)
+combos = {
+    "COMBO_MEXICO": ["NETFLIX", "DISNEY", "SPOTIFY"]
 }
 
 # START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["🛒 Comprar"],
-        ["📦 Ver servicios"]
+        ["📦 Servicios"]
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Bienvenido 👋\nSelecciona una opción:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
 
-    await update.message.reply_text("Bienvenido 👋\nSelecciona una opción:", reply_markup=reply_markup)
-
-# MENSAJES
+# MENÚ
 async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "🛒 Comprar":
         keyboard = [
-            ["Netflix Perfil"],
+            ["Netflix"],
             ["Disney"],
+            ["Spotify"],
             ["Combo México"]
         ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text(
+            "Selecciona servicio:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
 
-        await update.message.reply_text("Selecciona servicio:", reply_markup=reply_markup)
+    elif text == "📦 Servicios":
+        await update.message.reply_text(
+            "Servicios disponibles:\nNetflix\nDisney\nSpotify\nCombo México"
+        )
 
-    elif text == "Netflix Perfil":
-        await entregar(update, "NETFLIX_PERFIL")
+    elif text == "Netflix":
+        await entregar(update, ["NETFLIX"], "Netflix")
 
     elif text == "Disney":
-        await entregar(update, "DISNEY")
+        await entregar(update, ["DISNEY"], "Disney")
+
+    elif text == "Spotify":
+        await entregar(update, ["SPOTIFY"], "Spotify")
 
     elif text == "Combo México":
-        await entregar(update, "COMBO_MEXICO")
+        await entregar(update, combos["COMBO_MEXICO"], "Combo México")
 
-# ENTREGA AUTOMÁTICA
-async def entregar(update, servicio):
-    if len(stock[servicio]) == 0:
-        await update.message.reply_text("❌ Sin stock disponible")
-        return
+# ENTREGA
+async def entregar(update, servicios, nombre):
+    cuentas_entregadas = []
 
-    cuenta = stock[servicio].pop(0)
+    for servicio in servicios:
+        if len(stock[servicio]) == 0:
+            await update.message.reply_text(f"❌ Sin stock en {servicio}")
+            return
+        cuentas_entregadas.append(stock[servicio].pop(0))
 
-    entrega = f"""
+    fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    texto_cuentas = "\n".join(cuentas_entregadas)
+
+    mensaje = f"""
 📦 FICHA DE ENTREGA
 
-Servicio: {servicio}
+🛒 Servicio: {nombre}
 
 🔐 Datos:
-{cuenta}
+{texto_cuentas}
 
 ⚠️ Reglas:
-- No modificar
-- Usar perfil asignado
-- No compras dentro de la app
+- No modificar datos
+- Usar solo el perfil asignado
+- No realizar compras dentro de la app
 
-🕒 Entregado automáticamente
+🕒 Fecha: {fecha}
 """
 
-    await update.message.reply_text(entrega)
+    await update.message.reply_text(mensaje)
 
-# ADMIN - SETSTOCK
+# ADMIN: SETSTOCK
 async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ No autorizado")
         return
 
     try:
-        servicio = context.args[0]
+        servicio = context.args[0].upper()
         datos = " ".join(context.args[1:])
 
+        if servicio not in stock:
+            await update.message.reply_text("❌ Servicio no válido")
+            return
+
         stock[servicio].append(datos)
-
         await update.message.reply_text(f"✅ Cuenta agregada a {servicio}")
-    except:
-        await update.message.reply_text("Uso:\n/setstock SERVICIO correo_contraseña_perfil")
 
-# VER STOCK
+    except:
+        await update.message.reply_text("Uso:\n/setstock NETFLIX correo_contra_perfil")
+
+# ADMIN: VER STOCK
 async def verstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -105,4 +133,5 @@ app.add_handler(CommandHandler("setstock", setstock))
 app.add_handler(CommandHandler("verstock", verstock))
 app.add_handler(MessageHandler(filters.TEXT, mensajes))
 
+print("🤖 Bot corriendo...")
 app.run_polling()
