@@ -16,7 +16,7 @@ import os
 # =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 123456789
+ADMIN_ID = 6957858602
 
 if not TOKEN:
     raise ValueError("No hay BOT_TOKEN en variables de entorno")
