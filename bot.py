@@ -30,7 +30,6 @@ usuarios = {}
 # =========================
 
 def cargar_datos():
-
     global stock, usuarios
 
     if os.path.exists("stock.json"):
@@ -86,7 +85,6 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = str(update.effective_user.id)
 
-    # COMPRAR
     if text == "🛒 Comprar":
 
         if not stock:
@@ -104,7 +102,6 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
 
-    # SALDO
     elif text == "💰 Mi saldo":
 
         saldo = usuarios.get(user_id, {}).get("saldo", 0)
@@ -113,7 +110,6 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Tu saldo actual es: {saldo}"
         )
 
-    # SERVICIOS
     elif text == "📦 Servicios":
 
         if not stock:
@@ -129,12 +125,32 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📦 SERVICIOS DISPONIBLES\n\n{lista}"
         )
 
-    # COMPRA
     else:
 
         servicio = text.upper().replace(" ", "_")
-
         await entregar(update, servicio)
+
+# =========================
+# FORMATEAR CUENTA
+# =========================
+
+def formatear_cuenta(cuenta):
+
+    try:
+        partes = cuenta.split("_")
+
+        correo = partes[0]
+        contra = partes[1]
+        perfil = partes[3] if len(partes) > 3 else "N/A"
+
+        return (
+            f"📧 Correo: {correo}\n"
+            f"🔑 Contraseña: {contra}\n"
+            f"👤 Perfil: {perfil}"
+        )
+
+    except:
+        return cuenta
 
 # =========================
 # ENTREGAR
@@ -168,6 +184,8 @@ async def entregar(update: Update, servicio):
     usuarios[user_id]["saldo"] -= 1
     guardar_usuarios()
 
+    datos_formateados = formatear_cuenta(cuenta)
+
     fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     mensaje = f"""
@@ -177,7 +195,7 @@ async def entregar(update: Update, servicio):
 {servicio.replace('_',' ')}
 
 🔐 Datos:
-{cuenta}
+{datos_formateados}
 
 ⚠️ REGLAS
 • No cambiar contraseña
@@ -190,10 +208,7 @@ async def entregar(update: Update, servicio):
     with open("ventas.txt", "a", encoding="utf-8") as f:
         f.write(f"{user_id} | {servicio} | {fecha}\n")
 
-    await update.message.reply_text(
-        mensaje,
-        protect_content=True
-    )
+    await update.message.reply_text(mensaje)
 
 # =========================
 # ADMIN
@@ -221,7 +236,7 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except:
         await update.message.reply_text(
-            "Uso:\n/setstock NETFLIX correo:contra:perfil"
+            "Uso:\n/setstock NETFLIX correo_contra_perfil"
         )
 
 
