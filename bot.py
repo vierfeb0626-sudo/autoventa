@@ -15,7 +15,8 @@ import os
 # CONFIG
 # =========================
 
-BOT_TOKEN = "AQUI_TU_TOKEN"
+import os
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 123456789
 
 # =========================
