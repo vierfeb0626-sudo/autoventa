@@ -391,9 +391,15 @@ async def comprar(update, servicio):
 👤 Perfil:
 {datos['perfil']}
 
+_Al adquirir la cuenta aceptas los términos_
+
 ❌ No cambiar datos
 ❌ No modificar perfiles
 ❌ No comprar dentro de la app
+
+*Cualquier uso indebido es pérdida de garantía*
+
+⚠️ Garantía de 28 días
 
 {get_time()}
 """
