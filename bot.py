@@ -8,14 +8,14 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 stock = {}
 usuarios = {}
-tienda = {}
+precios = {}
 
 # =========================
 # ARCHIVOS
 # =========================
 
 def cargar_datos():
-    global stock, usuarios, tienda
+    global stock, usuarios, precios
 
     if os.path.exists("stock.json"):
         with open("stock.json", "r") as f:
@@ -25,9 +25,9 @@ def cargar_datos():
         with open("usuarios.json", "r") as f:
             usuarios.update(json.load(f))
 
-    if os.path.exists("tienda.json"):
-        with open("tienda.json", "r") as f:
-            tienda.update(json.load(f))
+    if os.path.exists("precios.json"):
+        with open("precios.json", "r") as f:
+            precios.update(json.load(f))
 
 
 def guardar_stock():
@@ -40,9 +40,9 @@ def guardar_usuarios():
         json.dump(usuarios, f, indent=4)
 
 
-def guardar_tienda():
-    with open("tienda.json", "w") as f:
-        json.dump(tienda, f, indent=4)
+def guardar_precios():
+    with open("precios.json", "w") as f:
+        json.dump(precios, f, indent=4)
 
 # =========================
 # START
@@ -69,15 +69,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def formatear(cuenta):
     try:
         p = cuenta.split("_")
-        correo = p[0]
-        contra = p[1]
-        perfil = p[2] if len(p) > 2 else "N/A"
-
-        return (
-            f"📧 Correo: {correo}\n"
-            f"🔑 Contraseña: {contra}\n"
-            f"👤 Perfil: {perfil}"
-        )
+        return f"📧 Correo: {p[0]}\n🔑 Contraseña: {p[1]}\n👤 Perfil: {p[2] if len(p)>2 else 'N/A'}"
     except:
         return cuenta
 
@@ -114,8 +106,7 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif text == "💰 Saldo":
-        saldo = usuarios.get(user_id, {}).get("saldo", 0)
-        await update.message.reply_text(f"💰 Saldo: {saldo}")
+        await update.message.reply_text(f"💰 Saldo: {usuarios.get(user_id, {}).get('saldo',0)}")
 
     elif text == "🛍️ Tienda":
         await vertienda(update, context)
@@ -140,7 +131,6 @@ async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         p, c = disponibles(servicio)
 
         keyboard = []
-
         if p > 0:
             keyboard.append([f"👤 Perfil ({p})"])
         if c > 0:
@@ -166,7 +156,11 @@ async def entregar(update: Update, servicio):
         await update.message.reply_text("❌ Sin stock")
         return
 
-    precio = tienda.get(servicio, 1)
+    precio = precios.get(servicio, 0)
+
+    if precio == 0:
+        await update.message.reply_text("⚠️ Servicio sin precio")
+        return
 
     if usuarios[user_id]["saldo"] < precio:
         await update.message.reply_text("❌ Saldo insuficiente")
@@ -194,6 +188,7 @@ Servicio: {servicio.replace("_"," ")}
 # ADMIN
 # =========================
 
+# 📦 STOCK
 async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -203,16 +198,11 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo = context.args[1].upper()
         datos = " ".join(context.args[2:])
 
-        if tipo not in ["PERFIL", "COMPLETA"]:
-            await update.message.reply_text("❌ Usa PERFIL o COMPLETA")
-            return
-
         key = f"{servicio}_{tipo}"
 
         if key not in stock:
             stock[key] = []
 
-        # ❌ EVITAR DUPLICADOS
         if datos in stock[key]:
             await update.message.reply_text("⚠️ Cuenta ya existe")
             return
@@ -223,12 +213,31 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Agregado a {key}")
 
     except:
-        await update.message.reply_text(
-            "Uso:\n/setstock APPLE PERFIL correo_contra_perfil"
-        )
+        await update.message.reply_text("Uso:\n/setstock APPLE PERFIL correo_pass_1")
 
-# 💰 AHORA ES PRECIO POR SERVICIO
+# 💰 SALDO USUARIO
 async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    try:
+        user_id = context.args[0]
+        monto = int(context.args[1])
+
+        if user_id not in usuarios:
+            usuarios[user_id] = {"saldo": 0}
+
+        usuarios[user_id]["saldo"] += monto
+        guardar_usuarios()
+
+        await update.message.reply_text(f"✅ Saldo agregado a {user_id}: {monto}")
+
+    except:
+        await update.message.reply_text("Uso:\n/addsaldo ID 100")
+
+# 💲 PRECIO SERVICIO
+async def setprecio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != ADMIN_ID:
         return
@@ -237,28 +246,24 @@ async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         key = context.args[0].upper()
         precio = int(context.args[1])
 
-        tienda[key] = precio
-        guardar_tienda()
+        precios[key] = precio
+        guardar_precios()
 
-        await update.message.reply_text(
-            f"✅ Precio asignado\n{key} = ${precio}"
-        )
+        await update.message.reply_text(f"✅ Precio {key} = ${precio}")
 
     except:
-        await update.message.reply_text(
-            "Uso:\n/addsaldo APPLE_PERFIL 2"
-        )
+        await update.message.reply_text("Uso:\n/setprecio APPLE_PERFIL 20")
 
 # 🛍️ TIENDA
 async def vertienda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not tienda:
+    if not precios:
         await update.message.reply_text("❌ No hay precios")
         return
 
     txt = "🛒 TIENDA\n\n"
 
-    for k, v in tienda.items():
+    for k, v in precios.items():
         txt += f"{k.replace('_',' ')} - 💰 {v}\n"
 
     await update.message.reply_text(txt)
@@ -275,11 +280,12 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setstock", setstock))
     app.add_handler(CommandHandler("addsaldo", addsaldo))
+    app.add_handler(CommandHandler("setprecio", setprecio))
     app.add_handler(CommandHandler("tienda", vertienda))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensajes))
 
-    print("🤖 BOT ONLINE")
+    print("🤖 BOT PERFECTO ONLINE")
     app.run_polling()
 
 if __name__ == "__main__":
