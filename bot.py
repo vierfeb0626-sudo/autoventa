@@ -1,305 +1,265 @@
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
-
-import json
-import os
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import json, os
 from datetime import datetime
-
-# =========================
-# CONFIG
-# =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
-# =========================
-# BASE DE DATOS
-# =========================
-
 stock = {}
 usuarios = {}
+tienda = {}
 
 # =========================
 # ARCHIVOS
 # =========================
 
 def cargar_datos():
-    global stock, usuarios
+    global stock, usuarios, tienda
 
     if os.path.exists("stock.json"):
-        with open("stock.json", "r", encoding="utf-8") as f:
+        with open("stock.json", "r") as f:
             stock.update(json.load(f))
 
     if os.path.exists("usuarios.json"):
-        with open("usuarios.json", "r", encoding="utf-8") as f:
+        with open("usuarios.json", "r") as f:
             usuarios.update(json.load(f))
+
+    if os.path.exists("tienda.json"):
+        with open("tienda.json", "r") as f:
+            tienda.update(json.load(f))
 
 
 def guardar_stock():
-    with open("stock.json", "w", encoding="utf-8") as f:
-        json.dump(stock, f, indent=4, ensure_ascii=False)
+    with open("stock.json", "w") as f:
+        json.dump(stock, f, indent=4)
 
 
 def guardar_usuarios():
-    with open("usuarios.json", "w", encoding="utf-8") as f:
-        json.dump(usuarios, f, indent=4, ensure_ascii=False)
+    with open("usuarios.json", "w") as f:
+        json.dump(usuarios, f, indent=4)
+
+
+def guardar_tienda():
+    with open("tienda.json", "w") as f:
+        json.dump(tienda, f, indent=4)
 
 # =========================
 # START
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user_id = str(update.effective_user.id)
 
     if user_id not in usuarios:
         usuarios[user_id] = {"saldo": 0}
         guardar_usuarios()
 
-    keyboard = [
-        ["🛒 Comprar"],
-        ["💰 Mi saldo"],
-        ["📦 Servicios"]
-    ]
+    keyboard = [["🛒 Comprar"], ["💰 Saldo"], ["🛍️ Tienda"]]
 
     await update.message.reply_text(
-        f"👋 Bienvenido a VELTRIX\n\n"
-        f"🆔 Tu ID: {user_id}\n"
-        f"💰 Saldo: {usuarios[user_id]['saldo']}\n\n"
-        f"Usa tu ID para recargar saldo",
+        f"👋 Bienvenido\n\n🆔 ID: {user_id}\n💰 Saldo: {usuarios[user_id]['saldo']}",
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
+
+# =========================
+# FORMATO CUENTA
+# =========================
+
+def formatear(cuenta):
+    try:
+        p = cuenta.split("_")
+        return f"📧 {p[0]}\n🔑 {p[1]}\n👤 Perfil: {p[3] if len(p)>3 else 'N/A'}"
+    except:
+        return cuenta
+
+# =========================
+# STOCK DISPONIBLE
+# =========================
+
+def disponibles(servicio):
+    p = len(stock.get(f"{servicio}_PERFIL", []))
+    c = len(stock.get(f"{servicio}_COMPLETA", []))
+    return p, c
 
 # =========================
 # MENSAJES
 # =========================
 
 async def mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     text = update.message.text
     user_id = str(update.effective_user.id)
 
     if text == "🛒 Comprar":
-
-        if not stock:
-            await update.message.reply_text("❌ No hay servicios")
+        servicios = set([k.split("_")[0] for k in stock.keys()])
+        if not servicios:
+            await update.message.reply_text("❌ Sin servicios")
             return
 
-        keyboard = []
+        keyboard = [[s] for s in servicios]
+        await update.message.reply_text("Selecciona servicio:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-        for servicio in stock.keys():
-            nombre = servicio.replace("_", " ").title()
-            keyboard.append([nombre])
+    elif text == "💰 Saldo":
+        await update.message.reply_text(f"💰 Saldo: {usuarios.get(user_id, {}).get('saldo',0)}")
 
-        await update.message.reply_text(
-            "📦 Selecciona servicio:",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        )
+    elif text == "🛍️ Tienda":
+        await vertienda(update, context)
 
-    elif text == "💰 Mi saldo":
+    elif "Perfil" in text or "Completa" in text:
+        base = context.user_data.get("servicio")
 
-        saldo = usuarios.get(user_id, {}).get("saldo", 0)
-
-        await update.message.reply_text(
-            f"💰 Tu saldo actual es: {saldo}"
-        )
-
-    elif text == "📦 Servicios":
-
-        if not stock:
-            await update.message.reply_text("❌ No hay servicios")
+        if not base:
+            await update.message.reply_text("❌ Error")
             return
 
-        lista = "\n".join([
-            f"• {s.replace('_',' ').title()} ({len(stock[s])})"
-            for s in stock
-        ])
-
-        await update.message.reply_text(
-            f"📦 SERVICIOS DISPONIBLES\n\n{lista}"
-        )
+        tipo = "PERFIL" if "Perfil" in text else "COMPLETA"
+        await entregar(update, f"{base}_{tipo}")
 
     else:
+        servicio = text.upper()
+        context.user_data["servicio"] = servicio
 
-        servicio = text.upper().replace(" ", "_")
-        await entregar(update, servicio)
+        p, c = disponibles(servicio)
 
-# =========================
-# FORMATEAR CUENTA
-# =========================
+        keyboard = []
+        if p > 0:
+            keyboard.append([f"👤 Perfil ({p})"])
+        if c > 0:
+            keyboard.append([f"📺 Completa ({c})"])
 
-def formatear_cuenta(cuenta):
+        if not keyboard:
+            await update.message.reply_text("❌ Sin stock")
+            return
 
-    try:
-        partes = cuenta.split("_")
-
-        correo = partes[0]
-        contra = partes[1]
-        perfil = partes[3] if len(partes) > 3 else "N/A"
-
-        return (
-            f"📧 Correo: {correo}\n"
-            f"🔑 Contraseña: {contra}\n"
-            f"👤 Perfil: {perfil}"
-        )
-
-    except:
-        return cuenta
+        await update.message.reply_text(f"{servicio}\nElige tipo:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
 # =========================
 # ENTREGAR
 # =========================
 
 async def entregar(update: Update, servicio):
-
     user_id = str(update.effective_user.id)
 
-    if user_id not in usuarios:
-        usuarios[user_id] = {"saldo": 0}
-
-    # SIN SALDO
-    if usuarios[user_id]["saldo"] <= 0:
-        await update.message.reply_text(
-            "❌ No tienes saldo\nContacta al admin 💰"
-        )
+    if servicio not in stock or not stock[servicio]:
+        await update.message.reply_text("❌ Sin stock")
         return
 
-    # SIN STOCK
-    if servicio not in stock or len(stock[servicio]) == 0:
-        await update.message.reply_text(
-            f"❌ Sin stock en {servicio}"
-        )
+    precio = tienda.get(servicio, 1)
+
+    if usuarios[user_id]["saldo"] < precio:
+        await update.message.reply_text("❌ Saldo insuficiente")
         return
 
-    # ENTREGAR
     cuenta = stock[servicio].pop(0)
     guardar_stock()
 
-    usuarios[user_id]["saldo"] -= 1
+    usuarios[user_id]["saldo"] -= precio
     guardar_usuarios()
 
-    datos_formateados = formatear_cuenta(cuenta)
+    msg = f"""
+📦 ENTREGA
 
-    fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+Servicio: {servicio}
+{formatear(cuenta)}
 
-    mensaje = f"""
-📦 FICHA DE ENTREGA
-
-🛒 Servicio:
-{servicio.replace('_',' ')}
-
-🔐 Datos:
-{datos_formateados}
-
-⚠️ REGLAS
-• No cambiar contraseña
-• No modificar cuenta
-
-🕒 Fecha:
-{fecha}
+💰 Costo: {precio}
+🕒 {datetime.now().strftime("%d/%m/%Y %H:%M")}
 """
 
-    with open("ventas.txt", "a", encoding="utf-8") as f:
-        f.write(f"{user_id} | {servicio} | {fecha}\n")
-
-    await update.message.reply_text(mensaje)
+    await update.message.reply_text(msg)
 
 # =========================
 # ADMIN
 # =========================
 
 async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ No autorizado")
         return
 
     try:
         servicio = context.args[0].upper()
-        datos = " ".join(context.args[1:])
+        tipo = context.args[1].upper()
+        datos = " ".join(context.args[2:])
 
-        if servicio not in stock:
-            stock[servicio] = []
+        key = f"{servicio}_{tipo}"
 
-        stock[servicio].append(datos)
+        if key not in stock:
+            stock[key] = []
+
+        # 🚫 EVITAR REPETIDOS
+        if datos in stock[key]:
+            await update.message.reply_text("⚠️ Cuenta ya existe")
+            return
+
+        stock[key].append(datos)
         guardar_stock()
 
-        await update.message.reply_text(
-            f"✅ Agregado a {servicio}"
-        )
+        await update.message.reply_text(f"✅ Agregado a {key}")
 
     except:
-        await update.message.reply_text(
-            "Uso:\n/setstock NETFLIX correo_contra_perfil"
-        )
+        await update.message.reply_text("Uso:\n/setstock DISNEY PERFIL correo_contra_perfil")
 
-
-async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+async def addtienda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     try:
-        user_id = context.args[0]
-        monto = int(context.args[1])
+        servicio = context.args[0].upper()
+        tipo = context.args[1].upper()
+        precio = int(context.args[2])
 
-        if user_id not in usuarios:
-            usuarios[user_id] = {"saldo": 0}
+        tienda[f"{servicio}_{tipo}"] = precio
+        guardar_tienda()
 
-        usuarios[user_id]["saldo"] += monto
-        guardar_usuarios()
-
-        await update.message.reply_text(
-            f"✅ Saldo agregado a {user_id}: {monto}"
-        )
-
+        await update.message.reply_text("✅ Precio agregado")
     except:
-        await update.message.reply_text(
-            "Uso:\n/addsaldo ID 10"
-        )
+        await update.message.reply_text("Uso:\n/addtienda DISNEY PERFIL 2")
 
+async def vertienda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not tienda:
+        await update.message.reply_text("❌ Vacía")
+        return
 
-async def verstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    txt = "🛍️ TIENDA\n\n"
+    for k,v in tienda.items():
+        txt += f"{k.replace('_',' ')} - 💰 {v}\n"
 
+    await update.message.reply_text(txt)
+
+async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    texto = "📦 STOCK\n\n"
+    uid = context.args[0]
+    monto = int(context.args[1])
 
-    for s in stock:
-        texto += f"{s}: {len(stock[s])}\n"
+    if uid not in usuarios:
+        usuarios[uid] = {"saldo":0}
 
-    await update.message.reply_text(texto)
+    usuarios[uid]["saldo"] += monto
+    guardar_usuarios()
+
+    await update.message.reply_text("✅ Saldo agregado")
 
 # =========================
 # MAIN
 # =========================
 
 def main():
-
     cargar_datos()
 
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setstock", setstock))
+    app.add_handler(CommandHandler("addtienda", addtienda))
     app.add_handler(CommandHandler("addsaldo", addsaldo))
-    app.add_handler(CommandHandler("verstock", verstock))
+    app.add_handler(CommandHandler("tienda", vertienda))
 
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, mensajes)
-    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensajes))
 
-    print("🤖 BOT VELTRIX ONLINE")
-    app.run_polling(drop_pending_updates=True)
-
-# =========================
+    print("🤖 ONLINE")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
