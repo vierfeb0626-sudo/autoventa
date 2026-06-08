@@ -2,11 +2,11 @@ import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo  # ✅ reemplazo de pytz
 
 # ===== CONFIG =====
 TOKEN = "TU_TOKEN_AQUI"
-ADMIN_ID = 123456789  # tu ID
+ADMIN_ID = 123456789
 
 # ===== DATA =====
 users = {}
@@ -14,14 +14,12 @@ stock = {}
 prices = {}
 tienda = {}
 
-# ===== LOG =====
 logging.basicConfig(level=logging.INFO)
 
 # ===== FUNCIONES =====
 
 def get_time():
-    tz = pytz.timezone("America/Chihuahua")
-    now = datetime.now(tz)
+    now = datetime.now(ZoneInfo("America/Chihuahua"))
     return now.strftime("📆 %d/%m/%Y 🕒 %H:%M")
 
 def parse_account(data):
@@ -32,7 +30,7 @@ def parse_account(data):
         "perfil": parts[2] if len(parts) > 2 else "N/A"
     }
 
-# ===== COMANDOS =====
+# ===== START =====
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -41,8 +39,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"saldo": 0}
 
     keyboard = [["APPLE", "DISNEY"], ["NETFLIX"]]
+
     await update.message.reply_text(
-        f"👋 Bienvenido\n\n🆔 Tu ID: {user_id}\n💰 Saldo: ${users[user_id]['saldo']}",
+        f"👋 Bienvenido\n\n🆔 ID: {user_id}\n💰 Saldo: ${users[user_id]['saldo']}",
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
@@ -61,9 +60,9 @@ async def addsaldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         users[user_id]["saldo"] += monto
 
-        await update.message.reply_text(f"✅ Saldo agregado\n{user_id} = ${users[user_id]['saldo']}")
+        await update.message.reply_text(f"✅ {user_id} = ${users[user_id]['saldo']}")
     except:
-        await update.message.reply_text("❌ Uso: /addsaldo ID MONTO")
+        await update.message.reply_text("❌ /addsaldo ID MONTO")
 
 # ===== STOCK =====
 
@@ -79,13 +78,13 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stock[servicio] = []
 
         if data in stock[servicio]:
-            await update.message.reply_text("⚠️ Cuenta ya existe")
+            await update.message.reply_text("⚠️ Ya existe")
             return
 
         stock[servicio].append(data)
-        await update.message.reply_text(f"✅ Agregado a {servicio}")
+        await update.message.reply_text(f"✅ Stock agregado a {servicio}")
     except:
-        await update.message.reply_text("❌ Uso: /setstock APPLE_PERFIL correo_pass_perfil")
+        await update.message.reply_text("❌ /setstock APPLE_PERFIL correo_pass_perfil")
 
 # ===== PRECIO =====
 
@@ -98,10 +97,9 @@ async def setprecio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         precio = int(context.args[1])
 
         prices[servicio] = precio
-
         await update.message.reply_text(f"💰 {servicio} = ${precio}")
     except:
-        await update.message.reply_text("❌ Uso: /setprecio APPLE_PERFIL 20")
+        await update.message.reply_text("❌ /setprecio APPLE_PERFIL 20")
 
 # ===== TIENDA =====
 
@@ -116,11 +114,11 @@ async def addtienda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tienda[servicio] = precio
         await update.message.reply_text("✅ Tienda actualizada")
     except:
-        await update.message.reply_text("❌ Uso: /addtienda APPLE_PERFIL 20")
+        await update.message.reply_text("❌ /addtienda APPLE_PERFIL 20")
 
 async def tienda_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not tienda:
-        await update.message.reply_text("❌ No hay tienda aún")
+        await update.message.reply_text("❌ No hay tienda")
         return
 
     msg = "🛒 TIENDA\n\n"
@@ -129,16 +127,15 @@ async def tienda_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg)
 
-# ===== MENSAJES =====
+# ===== MENÚ =====
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.upper()
-    user_id = update.effective_user.id
 
-    # Selección de app
     if text in ["APPLE", "DISNEY", "NETFLIX"]:
+        context.user_data["base"] = text
+
         keyboard = [["PERFIL", "COMPLETA"]]
-        context.user_data["servicio_base"] = text
 
         await update.message.reply_text(
             f"{text}\nSelecciona tipo:",
@@ -146,29 +143,25 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Tipo
     if text in ["PERFIL", "COMPLETA"]:
-        base = context.user_data.get("servicio_base")
+        base = context.user_data.get("base")
 
         if not base:
             return
 
         servicio = f"{base}_{text}"
-        context.user_data["servicio"] = servicio
-
-        await procesar_compra(update, servicio)
-        return
+        await comprar(update, servicio)
 
 # ===== COMPRA =====
 
-async def procesar_compra(update, servicio):
+async def comprar(update, servicio):
     user_id = update.effective_user.id
 
     if servicio not in prices:
-        await update.message.reply_text("❌ Sin precio asignado")
+        await update.message.reply_text("❌ Sin precio")
         return
 
-    if servicio not in stock or len(stock[servicio]) == 0:
+    if servicio not in stock or not stock[servicio]:
         await update.message.reply_text("❌ Sin stock")
         return
 
@@ -195,15 +188,14 @@ Servicio: {servicio.replace("_", " ")}
 
 ❌ No cambiar datos
 ❌ No hacer suscripción dentro de la app
-❌ Respetar los perfiles asignados
-El mal uso es pérdida de garantía.
+❌ Respetar perfiles
 
 {get_time()}
 """
 
     await update.message.reply_text(msg)
 
-# ===== MAIN =====
+# ===== RUN =====
 
 app = ApplicationBuilder().token(TOKEN).build()
 
@@ -216,5 +208,5 @@ app.add_handler(CommandHandler("tienda", tienda_cmd))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-print("BOT ACTIVO 🚀")
+print("🚀 BOT ACTIVO")
 app.run_polling()
