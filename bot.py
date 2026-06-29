@@ -4,349 +4,472 @@ import os
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes
+ApplicationBuilder,
+CommandHandler,
+MessageHandler,
+filters,
+ContextTypes
 )
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-
 TOKEN = os.getenv("BOT_TOKEN")
-
-# =====================
-# ADMINISTRADORES
-# =====================
-
 ADMIN_IDS = [
-    6957858602,
-    7477204627
+6957858602,
+7477204627
 ]
-
 
 users = {}
 stock = {}
 prices = {}
-tienda = {}
-
 
 logging.basicConfig(level=logging.INFO)
 
+=========================
 
-# =====================
-# DATOS
-# =====================
+JSON
+
+=========================
 
 def save_data():
 
-    with open("users.json","w",encoding="utf-8") as f:
-        json.dump(users,f,indent=4)
+files = {  
+    "users.json": users,  
+    "stock.json": stock,  
+    "prices.json": prices  
+}  
 
-    with open("stock.json","w",encoding="utf-8") as f:
-        json.dump(stock,f,indent=4)
-
-    with open("prices.json","w",encoding="utf-8") as f:
-        json.dump(prices,f,indent=4)
-
-    with open("tienda.json","w",encoding="utf-8") as f:
-        json.dump(tienda,f,indent=4)
-
-
-
-def load_file(name):
-
-    try:
-        return json.load(
-            open(name,encoding="utf-8")
-        )
-    except:
-        return {}
-
-
+for name, data in files.items():  
+    with open(name, "w", encoding="utf-8") as f:  
+        json.dump(data, f, indent=4)
 
 def load_data():
 
-    global users,stock,prices,tienda
+global users, stock, prices  
 
-    users = load_file("users.json")
-    stock = load_file("stock.json")
-    prices = load_file("prices.json")
-    tienda = load_file("tienda.json")
+try:  
+    users = json.load(open("users.json", encoding="utf-8"))  
+except:  
+    users = {}  
 
+try:  
+    stock = json.load(open("stock.json", encoding="utf-8"))  
+except:  
+    stock = {}  
 
+try:  
+    prices = json.load(open("prices.json", encoding="utf-8"))  
+except:  
+    prices = {}
 
-def admin(update):
+=========================
 
-    return update.effective_user.id in ADMIN_IDS
+UTILIDADES
 
-
+=========================
 
 def get_time():
 
-    return datetime.now(
-        ZoneInfo("America/Chihuahua")
-    ).strftime(
-        "📆 %d/%m/%Y 🕒 %H:%M"
-    )
+now = datetime.now(  
+    ZoneInfo("America/Chihuahua")  
+)  
 
-
+return now.strftime(  
+    "📆 %d/%m/%Y 🕒 %H:%M"  
+)
 
 def parse_account(data):
 
-    p=data.split("_")
+try:  
+    p = data.split("_")  
 
-    return {
-        "correo":p[0],
-        "password":p[1],
-        "perfil":p[2] if len(p)>2 else "N/A"
+    return {  
+        "correo": p[0],  
+        "password": p[1],  
+        "perfil": p[2] if len(p) > 2 else "N/A"  
+    }  
+
+except:  
+
+    return {  
+        "correo":"ERROR",  
+        "password":"ERROR",  
+        "perfil":"ERROR"  
     }
 
+def tienda_disponible():
+
+lista = []  
+
+for item, cuentas in stock.items():  
+
+    if cuentas:  
+        lista.append(item)  
+
+return lista
+
+=========================
+
+START
+
+=========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+uid = str(update.effective_user.id)  
+
+if uid not in users:  
+    users[uid] = {  
+        "saldo":0  
+    }  
+    save_data()  
 
 
-# =====================
-# START
-# =====================
-
-async def start(update,context):
-
-    uid=str(update.effective_user.id)
-
-    if uid not in users:
-
-        users[uid]={
-            "saldo":0
-        }
-
-        save_data()
+keyboard = []  
 
 
-    await update.message.reply_text(
-f"""
-👋 Bienvenido VELTRIX
+bases = set()  
 
-🆔 ID: {uid}
-💰 Saldo: ${users[uid]['saldo']}
-""",
-reply_markup=ReplyKeyboardMarkup(
-[
-["🛒 TIENDA"],
-["💰 SALDO"]
-],
-resize_keyboard=True
+for servicio in tienda_disponible():  
+
+    base = servicio.split("_")[0]  
+
+    if base not in bases:  
+
+        bases.add(base)  
+        keyboard.append([base])  
+
+
+keyboard.append(  
+    ["💰 SALDO","🛒 TIENDA"]  
+)  
+
+
+await update.message.reply_text(  
+
+    f"👋 Bienvenido\n\n"  
+    f"🆔 ID: {uid}\n"  
+    f"💰 Saldo: ${users[uid]['saldo']}",  
+
+    reply_markup=ReplyKeyboardMarkup(  
+        keyboard,  
+        resize_keyboard=True  
+    )  
 )
-)
+
+=========================
+
+TIENDA
+
+=========================
+
+async def tienda_cmd(update, context):
+
+disponibles = tienda_disponible()  
 
 
+if not disponibles:  
 
-# =====================
-# TIENDA
-# =====================
-
-async def tienda_cmd(update,context):
-
-    if not tienda:
-
-        await update.message.reply_text(
-            "❌ Sin productos disponibles"
-        )
-        return
+    await update.message.reply_text(  
+        "❌ Sin productos disponibles"  
+    )  
+    return  
 
 
-    msg="🛒 TIENDA\n\n"
+msg = "🛒 TIENDA\n\n"  
 
 
-    for s,p in tienda.items():
+for item in disponibles:  
 
-        msg += f"• {s.replace('_',' ')} ${p}\n"
+    precio = prices.get(item,"?")  
 
-
-    await update.message.reply_text(msg)
-
-
-
-# =====================
-# ADD TIENDA
-# =====================
-
-async def addtienda(update,context):
-
-    if not admin(update):
-        return
+    msg += (  
+        f"• {item.replace('_',' ')} "  
+        f"= ${precio}\n"  
+    )  
 
 
-    try:
+await update.message.reply_text(msg)
 
-        servicio=context.args[0].upper()
-        precio=int(context.args[1])
+=========================
 
-        tienda[servicio]=precio
+STOCK ADMIN
 
-        save_data()
+=========================
 
-        await update.message.reply_text(
-            "✅ Producto agregado"
-        )
+async def stock_cmd(update, context):
 
-    except:
-
-        await update.message.reply_text(
-            "/addtienda SERVICIO PRECIO"
-        )
+if update.effective_user.id != ADMIN_IDS:  
+    return  
 
 
-
-# =====================
-# STOCK
-# =====================
-
-async def setstock(update,context):
-
-    if not admin(update):
-        return
+msg = "📦 STOCK DISPONIBLE\n\n"  
 
 
-    try:
+if not stock:  
 
-        servicio=context.args[0].upper()
+    msg += "Sin datos"  
 
-        cuenta=" ".join(context.args[1:])
+else:  
 
+    for servicio, cuentas in stock.items():  
 
-        if servicio not in stock:
-            stock[servicio]=[]
-
-
-        stock[servicio].append(cuenta)
-
-        save_data()
+        msg += (  
+            f"{servicio.replace('_',' ')}\n"  
+            f"📦 {len(cuentas)} disponibles\n\n"  
+        )  
 
 
-        await update.message.reply_text(
-            "✅ Cuenta agregada"
-        )
+await update.message.reply_text(msg)
 
-    except:
+=========================
 
-        await update.message.reply_text(
-            "/setstock NETFLIX_PERFIL correo_pass_perfil"
-        )
+SALDO
 
+=========================
 
+async def addsaldo(update, context):
 
-# =====================
-# PRECIO
-# =====================
-
-async def setprecio(update,context):
-
-    if not admin(update):
-        return
+if update.effective_user.id != ADMIN_IDS:  
+    return  
 
 
-    servicio=context.args[0].upper()
-    precio=int(context.args[1])
+try:  
+
+    uid = str(context.args[0])  
+    monto = int(context.args[1])  
 
 
-    prices[servicio]=precio
+    if uid not in users:  
 
-    save_data()
+        users[uid]={  
+            "saldo":0  
+        }  
 
 
-    await update.message.reply_text(
-        "✅ Precio guardado"
+    users[uid]["saldo"] += monto  
+
+
+    save_data()  
+
+
+    await update.message.reply_text(  
+        "✅ Saldo actualizado"  
+    )  
+
+
+except:  
+
+    await update.message.reply_text(  
+        "❌ /addsaldo ID MONTO"  
     )
 
+=========================
+
+AGREGAR STOCK
+
+=========================
+
+async def setstock(update, context):
+
+if update.effective_user.id != ADMIN_IDS:  
+    return  
 
 
-# =====================
-# SALDO
-# =====================
+try:  
 
-async def addsaldo(update,context):
+    servicio = context.args[0].upper()  
 
-    if not admin(update):
-        return
-
-
-    uid=context.args[0]
-    monto=int(context.args[1])
+    data = " ".join(  
+        context.args[1:]  
+    )  
 
 
-    if uid not in users:
+    if servicio not in stock:  
 
-        users[uid]={
-            "saldo":0
-        }
+        stock[servicio]=[]  
 
 
-    users[uid]["saldo"] += monto
-
-    save_data()
+    stock[servicio].append(data)  
 
 
-    await update.message.reply_text(
-        "✅ Saldo agregado"
+    save_data()  
+
+
+    await update.message.reply_text(  
+        f"✅ Stock agregado {servicio}"  
+    )  
+
+
+except:  
+
+    await update.message.reply_text(  
+        "❌ /setstock NETFLIX_PERFIL correo_pass_perfil"  
     )
 
+=========================
+
+PRECIO
+
+=========================
+
+async def setprecio(update, context):
+
+if update.effective_user.id != ADMIN_IDS:  
+    return  
 
 
-# =====================
-# COMPRA
-# =====================
+try:  
 
-async def comprar(update,servicio):
-
-    uid=str(update.effective_user.id)
+    servicio=context.args[0].upper()  
+    precio=int(context.args[1])  
 
 
-    if servicio not in stock or not stock[servicio]:
+    prices[servicio]=precio  
 
-        await update.message.reply_text(
-            "❌ Sin stock"
+
+    save_data()  
+
+
+    await update.message.reply_text(  
+        "✅ Precio guardado"  
+    )  
+
+
+except:  
+
+    await update.message.reply_text(  
+        "❌ /setprecio NETFLIX_PERFIL 20"  
+    )
+
+=========================
+
+MENU
+
+=========================
+
+async def handle(update, context):
+
+text = update.message.text.upper()  
+
+
+if text=="🛒 TIENDA":  
+
+    await tienda_cmd(update,context)  
+    return  
+
+
+
+if text=="💰 SALDO":  
+
+    uid=str(update.effective_user.id)  
+
+    await update.message.reply_text(  
+        f"💰 Saldo: ${users.get(uid,{'saldo':0})['saldo']}"  
+    )  
+
+    return  
+
+
+
+bases=set()  
+
+
+for servicio in tienda_disponible():  
+
+    bases.add(  
+        servicio.split("_")[0]  
+    )  
+
+
+if text in bases:  
+
+    context.user_data["base"]=text  
+
+
+    await update.message.reply_text(  
+
+        "Selecciona:",  
+
+        reply_markup=ReplyKeyboardMarkup(  
+            [["PERFIL","COMPLETA"]],  
+            resize_keyboard=True  
+        )  
+    )  
+
+    return  
+
+
+
+if text in ["PERFIL","COMPLETA"]:  
+
+    base=context.user_data.get("base")  
+
+
+    if base:  
+
+        await comprar(  
+            update,  
+            f"{base}_{text}"  
         )
-        return
+
+=========================
+
+COMPRA
+
+=========================
+
+async def comprar(update, servicio):
+
+uid=str(update.effective_user.id)  
+
+
+if servicio not in stock or not stock[servicio]:  
+
+    await update.message.reply_text(  
+        "❌ Sin stock"  
+    )  
+    return  
+
+
+precio=prices.get(servicio)  
+
+
+if not precio:  
+
+    await update.message.reply_text(  
+        "❌ Sin precio"  
+    )  
+    return  
+
+
+saldo=users[uid]["saldo"]  
+
+
+if saldo < precio:  
+
+    await update.message.reply_text(  
+        "❌ Saldo insuficiente"  
+    )  
+    return  
 
 
 
-    precio=prices.get(servicio)
+cuenta=stock[servicio].pop(0)  
+
+users[uid]["saldo"]-=precio  
 
 
-    if not precio:
-
-        await update.message.reply_text(
-            "❌ Sin precio"
-        )
-        return
+save_data()  
 
 
-
-    saldo=users[uid]["saldo"]
-
-
-    if saldo < precio:
-
-        await update.message.reply_text(
-            "❌ Saldo insuficiente"
-        )
-        return
+datos=parse_account(cuenta)  
 
 
 
-    cuenta=stock[servicio].pop(0)
+await update.message.reply_text(
 
-    users[uid]["saldo"]-=precio
-
-
-    save_data()
-
-
-    d=parse_account(cuenta)
-
-
-    await update.message.reply_text(
 f"""
 📦 ENTREGA
 
@@ -354,21 +477,16 @@ f"""
 {servicio.replace('_',' ')}
 
 📧 Correo:
-{d['correo']}
+{datos['correo']}
 
 🔑 Contraseña:
-{d['password']}
+{datos['password']}
 
 👤 Perfil:
-{d['perfil']}
-
-_Al adquirir la cuenta aceptas los términos_
+{datos['perfil']}
 
 ❌ No cambiar datos
 ❌ No modificar perfiles
-❌ No comprar dentro de la app
-
-*Cualquier uso indebido es pérdida de garantía*
 
 ⚠️ Garantía 28 días
 
@@ -376,59 +494,29 @@ _Al adquirir la cuenta aceptas los términos_
 """
 )
 
+=========================
 
+RUN
 
-# =====================
-# BOTONES
-# =====================
-
-async def mensajes(update,context):
-
-    text=update.message.text.upper()
-
-
-    if text=="🛒 TIENDA":
-
-        await tienda_cmd(update,context)
-        return
-
-
-    if text=="💰 SALDO":
-
-        uid=str(update.effective_user.id)
-
-        await update.message.reply_text(
-            f"💰 Saldo: ${users.get(uid,{'saldo':0})['saldo']}"
-        )
-        return
-
-
-
-# =====================
-# RUN
-# =====================
+=========================
 
 load_data()
 
-
 app=ApplicationBuilder().token(TOKEN).build()
 
-
 app.add_handler(CommandHandler("start",start))
-app.add_handler(CommandHandler("tienda",tienda_cmd))
-app.add_handler(CommandHandler("addtienda",addtienda))
+app.add_handler(CommandHandler("addsaldo",addsaldo))
 app.add_handler(CommandHandler("setstock",setstock))
 app.add_handler(CommandHandler("setprecio",setprecio))
-app.add_handler(CommandHandler("addsaldo",addsaldo))
-
+app.add_handler(CommandHandler("stock",stock_cmd))
+app.add_handler(CommandHandler("tienda",tienda_cmd))
 
 app.add_handler(
 MessageHandler(
 filters.TEXT & ~filters.COMMAND,
-mensajes
+handle
 )
 )
-
 
 print("🚀 BOT ACTIVO")
 
