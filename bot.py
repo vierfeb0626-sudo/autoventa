@@ -16,7 +16,10 @@ from zoneinfo import ZoneInfo
 
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_IDS = [
+    6957858602,
+    7477204627
+]
 
 
 users = {}
