@@ -17,6 +17,10 @@ from zoneinfo import ZoneInfo
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+# =====================
+# ADMINISTRADORES
+# =====================
+
 ADMIN_IDS = [
     6957858602,
     7477204627
