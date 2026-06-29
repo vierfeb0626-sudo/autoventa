@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 
 TOKEN = os.getenv("BOT_TOKEN")
+
 ADMIN_IDS = [
     6957858602,
     7477204627
@@ -25,59 +26,65 @@ ADMIN_IDS = [
 users = {}
 stock = {}
 prices = {}
+tienda = {}
+
 
 logging.basicConfig(level=logging.INFO)
 
 
-# =========================
-# JSON
-# =========================
+# =====================
+# DATOS
+# =====================
 
 def save_data():
 
-    files = {
-        "users.json": users,
-        "stock.json": stock,
-        "prices.json": prices
-    }
+    with open("users.json","w",encoding="utf-8") as f:
+        json.dump(users,f,indent=4)
 
-    for name, data in files.items():
-        with open(name, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+    with open("stock.json","w",encoding="utf-8") as f:
+        json.dump(stock,f,indent=4)
+
+    with open("prices.json","w",encoding="utf-8") as f:
+        json.dump(prices,f,indent=4)
+
+    with open("tienda.json","w",encoding="utf-8") as f:
+        json.dump(tienda,f,indent=4)
+
+
+
+def load_file(name):
+
+    try:
+        return json.load(
+            open(name,encoding="utf-8")
+        )
+    except:
+        return {}
+
 
 
 def load_data():
 
-    global users, stock, prices
+    global users,stock,prices,tienda
 
-    try:
-        users = json.load(open("users.json", encoding="utf-8"))
-    except:
-        users = {}
-
-    try:
-        stock = json.load(open("stock.json", encoding="utf-8"))
-    except:
-        stock = {}
-
-    try:
-        prices = json.load(open("prices.json", encoding="utf-8"))
-    except:
-        prices = {}
+    users = load_file("users.json")
+    stock = load_file("stock.json")
+    prices = load_file("prices.json")
+    tienda = load_file("tienda.json")
 
 
 
-# =========================
-# UTILIDADES
-# =========================
+def admin(update):
+
+    return update.effective_user.id in ADMIN_IDS
+
+
 
 def get_time():
 
-    now = datetime.now(
+    return datetime.now(
         ZoneInfo("America/Chihuahua")
-    )
-
-    return now.strftime(
+    ).strftime(
         "📆 %d/%m/%Y 🕒 %H:%M"
     )
 
@@ -85,97 +92,58 @@ def get_time():
 
 def parse_account(data):
 
-    try:
-        p = data.split("_")
+    p=data.split("_")
 
-        return {
-            "correo": p[0],
-            "password": p[1],
-            "perfil": p[2] if len(p) > 2 else "N/A"
-        }
-
-    except:
-
-        return {
-            "correo":"ERROR",
-            "password":"ERROR",
-            "perfil":"ERROR"
-        }
+    return {
+        "correo":p[0],
+        "password":p[1],
+        "perfil":p[2] if len(p)>2 else "N/A"
+    }
 
 
 
-def tienda_disponible():
-
-    lista = []
-
-    for item, cuentas in stock.items():
-
-        if cuentas:
-            lista.append(item)
-
-    return lista
-
-
-
-# =========================
+# =====================
 # START
-# =========================
+# =====================
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update,context):
 
-    uid = str(update.effective_user.id)
+    uid=str(update.effective_user.id)
 
     if uid not in users:
-        users[uid] = {
+
+        users[uid]={
             "saldo":0
         }
+
         save_data()
 
 
-    keyboard = []
-
-
-    bases = set()
-
-    for servicio in tienda_disponible():
-
-        base = servicio.split("_")[0]
-
-        if base not in bases:
-
-            bases.add(base)
-            keyboard.append([base])
-
-
-    keyboard.append(
-        ["💰 SALDO","🛒 TIENDA"]
-    )
-
-
     await update.message.reply_text(
+f"""
+👋 Bienvenido VELTRIX
 
-        f"👋 Bienvenido\n\n"
-        f"🆔 ID: {uid}\n"
-        f"💰 Saldo: ${users[uid]['saldo']}",
+🆔 ID: {uid}
+💰 Saldo: ${users[uid]['saldo']}
+""",
+reply_markup=ReplyKeyboardMarkup(
+[
+["🛒 TIENDA"],
+["💰 SALDO"]
+],
+resize_keyboard=True
+)
+)
 
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
-        )
-    )
 
 
-
-# =========================
+# =====================
 # TIENDA
-# =========================
+# =====================
 
-async def tienda_cmd(update, context):
+async def tienda_cmd(update,context):
 
-    disponibles = tienda_disponible()
-
-
-    if not disponibles:
+    if not tienda:
 
         await update.message.reply_text(
             "❌ Sin productos disponibles"
@@ -183,146 +151,25 @@ async def tienda_cmd(update, context):
         return
 
 
-    msg = "🛒 TIENDA\n\n"
+    msg="🛒 TIENDA\n\n"
 
 
-    for item in disponibles:
+    for s,p in tienda.items():
 
-        precio = prices.get(item,"?")
-
-        msg += (
-            f"• {item.replace('_',' ')} "
-            f"= ${precio}\n"
-        )
+        msg += f"• {s.replace('_',' ')} ${p}\n"
 
 
     await update.message.reply_text(msg)
 
 
 
-# =========================
-# STOCK ADMIN
-# =========================
+# =====================
+# ADD TIENDA
+# =====================
 
-async def stock_cmd(update, context):
+async def addtienda(update,context):
 
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-
-    msg = "📦 STOCK DISPONIBLE\n\n"
-
-
-    if not stock:
-
-        msg += "Sin datos"
-
-    else:
-
-        for servicio, cuentas in stock.items():
-
-            msg += (
-                f"{servicio.replace('_',' ')}\n"
-                f"📦 {len(cuentas)} disponibles\n\n"
-            )
-
-
-    await update.message.reply_text(msg)
-
-
-
-# =========================
-# SALDO
-# =========================
-
-async def addsaldo(update, context):
-
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-
-    try:
-
-        uid = str(context.args[0])
-        monto = int(context.args[1])
-
-
-        if uid not in users:
-
-            users[uid]={
-                "saldo":0
-            }
-
-
-        users[uid]["saldo"] += monto
-
-
-        save_data()
-
-
-        await update.message.reply_text(
-            "✅ Saldo actualizado"
-        )
-
-
-    except:
-
-        await update.message.reply_text(
-            "❌ /addsaldo ID MONTO"
-        )
-
-
-
-# =========================
-# AGREGAR STOCK
-# =========================
-
-async def setstock(update, context):
-
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-
-    try:
-
-        servicio = context.args[0].upper()
-
-        data = " ".join(
-            context.args[1:]
-        )
-
-
-        if servicio not in stock:
-
-            stock[servicio]=[]
-
-
-        stock[servicio].append(data)
-
-
-        save_data()
-
-
-        await update.message.reply_text(
-            f"✅ Stock agregado {servicio}"
-        )
-
-
-    except:
-
-        await update.message.reply_text(
-            "❌ /setstock NETFLIX_PERFIL correo_pass_perfil"
-        )
-
-
-
-# =========================
-# PRECIO
-# =========================
-
-async def setprecio(update, context):
-
-    if update.effective_user.id != ADMIN_ID:
+    if not admin(update):
         return
 
 
@@ -331,102 +178,122 @@ async def setprecio(update, context):
         servicio=context.args[0].upper()
         precio=int(context.args[1])
 
+        tienda[servicio]=precio
 
-        prices[servicio]=precio
+        save_data()
 
+        await update.message.reply_text(
+            "✅ Producto agregado"
+        )
+
+    except:
+
+        await update.message.reply_text(
+            "/addtienda SERVICIO PRECIO"
+        )
+
+
+
+# =====================
+# STOCK
+# =====================
+
+async def setstock(update,context):
+
+    if not admin(update):
+        return
+
+
+    try:
+
+        servicio=context.args[0].upper()
+
+        cuenta=" ".join(context.args[1:])
+
+
+        if servicio not in stock:
+            stock[servicio]=[]
+
+
+        stock[servicio].append(cuenta)
 
         save_data()
 
 
         await update.message.reply_text(
-            "✅ Precio guardado"
+            "✅ Cuenta agregada"
         )
-
 
     except:
 
         await update.message.reply_text(
-            "❌ /setprecio NETFLIX_PERFIL 20"
+            "/setstock NETFLIX_PERFIL correo_pass_perfil"
         )
 
 
 
-# =========================
-# MENU
-# =========================
+# =====================
+# PRECIO
+# =====================
 
-async def handle(update, context):
+async def setprecio(update,context):
 
-    text = update.message.text.upper()
-
-
-    if text=="🛒 TIENDA":
-
-        await tienda_cmd(update,context)
+    if not admin(update):
         return
 
 
+    servicio=context.args[0].upper()
+    precio=int(context.args[1])
 
-    if text=="💰 SALDO":
 
-        uid=str(update.effective_user.id)
+    prices[servicio]=precio
 
-        await update.message.reply_text(
-            f"💰 Saldo: ${users.get(uid,{'saldo':0})['saldo']}"
-        )
+    save_data()
 
+
+    await update.message.reply_text(
+        "✅ Precio guardado"
+    )
+
+
+
+# =====================
+# SALDO
+# =====================
+
+async def addsaldo(update,context):
+
+    if not admin(update):
         return
 
 
-
-    bases=set()
-
-
-    for servicio in tienda_disponible():
-
-        bases.add(
-            servicio.split("_")[0]
-        )
+    uid=context.args[0]
+    monto=int(context.args[1])
 
 
-    if text in bases:
+    if uid not in users:
 
-        context.user_data["base"]=text
+        users[uid]={
+            "saldo":0
+        }
 
 
-        await update.message.reply_text(
+    users[uid]["saldo"] += monto
 
-            "Selecciona:",
+    save_data()
 
-            reply_markup=ReplyKeyboardMarkup(
-                [["PERFIL","COMPLETA"]],
-                resize_keyboard=True
-            )
-        )
 
-        return
+    await update.message.reply_text(
+        "✅ Saldo agregado"
+    )
 
 
 
-    if text in ["PERFIL","COMPLETA"]:
-
-        base=context.user_data.get("base")
-
-
-        if base:
-
-            await comprar(
-                update,
-                f"{base}_{text}"
-            )
-
-
-
-# =========================
+# =====================
 # COMPRA
-# =========================
+# =====================
 
-async def comprar(update, servicio):
+async def comprar(update,servicio):
 
     uid=str(update.effective_user.id)
 
@@ -439,6 +306,7 @@ async def comprar(update, servicio):
         return
 
 
+
     precio=prices.get(servicio)
 
 
@@ -448,6 +316,7 @@ async def comprar(update, servicio):
             "❌ Sin precio"
         )
         return
+
 
 
     saldo=users[uid]["saldo"]
@@ -470,12 +339,10 @@ async def comprar(update, servicio):
     save_data()
 
 
-    datos=parse_account(cuenta)
-
+    d=parse_account(cuenta)
 
 
     await update.message.reply_text(
-
 f"""
 📦 ENTREGA
 
@@ -483,16 +350,21 @@ f"""
 {servicio.replace('_',' ')}
 
 📧 Correo:
-{datos['correo']}
+{d['correo']}
 
 🔑 Contraseña:
-{datos['password']}
+{d['password']}
 
 👤 Perfil:
-{datos['perfil']}
+{d['perfil']}
+
+_Al adquirir la cuenta aceptas los términos_
 
 ❌ No cambiar datos
 ❌ No modificar perfiles
+❌ No comprar dentro de la app
+
+*Cualquier uso indebido es pérdida de garantía*
 
 ⚠️ Garantía 28 días
 
@@ -502,9 +374,35 @@ f"""
 
 
 
-# =========================
+# =====================
+# BOTONES
+# =====================
+
+async def mensajes(update,context):
+
+    text=update.message.text.upper()
+
+
+    if text=="🛒 TIENDA":
+
+        await tienda_cmd(update,context)
+        return
+
+
+    if text=="💰 SALDO":
+
+        uid=str(update.effective_user.id)
+
+        await update.message.reply_text(
+            f"💰 Saldo: ${users.get(uid,{'saldo':0})['saldo']}"
+        )
+        return
+
+
+
+# =====================
 # RUN
-# =========================
+# =====================
 
 load_data()
 
@@ -513,18 +411,18 @@ app=ApplicationBuilder().token(TOKEN).build()
 
 
 app.add_handler(CommandHandler("start",start))
-app.add_handler(CommandHandler("addsaldo",addsaldo))
+app.add_handler(CommandHandler("tienda",tienda_cmd))
+app.add_handler(CommandHandler("addtienda",addtienda))
 app.add_handler(CommandHandler("setstock",setstock))
 app.add_handler(CommandHandler("setprecio",setprecio))
-app.add_handler(CommandHandler("stock",stock_cmd))
-app.add_handler(CommandHandler("tienda",tienda_cmd))
+app.add_handler(CommandHandler("addsaldo",addsaldo))
 
 
 app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle
-    )
+MessageHandler(
+filters.TEXT & ~filters.COMMAND,
+mensajes
+)
 )
 
 
